@@ -7,3 +7,5 @@ langchain-classic
 sentence-transformers
 faiss-cpu
 pypdf
+pymongo
+dnspython

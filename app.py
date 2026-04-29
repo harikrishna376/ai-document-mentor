@@ -39,6 +39,7 @@ if "chat_history" not in st.session_state:
 if "qa_chain" not in st.session_state:
     st.session_state.qa_chain = None
 
+# Establish MongoDB Connection
 client = MongoClient(st.secrets["MONGO_URI"])
 db = client["AI_Mentor_DB"]
 history_collection = db["chat_history"]
@@ -59,6 +60,7 @@ if st.session_state.auth_state == "landing":
     if st.button("Continue as Guest"):
         st.session_state.auth_state = "authenticated"
         st.session_state.user_id = "guest"
+        st.session_state.session_id = str(uuid.uuid4()) # Fix for AttributeError
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -72,8 +74,10 @@ elif st.session_state.auth_state == "login":
         if user:
             st.session_state.auth_state = "authenticated"
             st.session_state.user_id = email
+            st.session_state.session_id = str(uuid.uuid4()) # Fix for AttributeError
             st.rerun()
-        else: st.error("Invalid credentials")
+        else: 
+            st.error("Invalid credentials")
     if st.button("Back"):
         st.session_state.auth_state = "landing"
         st.rerun()
@@ -86,9 +90,10 @@ elif st.session_state.auth_state == "signup":
     new_pwd = st.text_input("New Password", type="password")
     if st.button("Create Account"):
         if users_collection.find_one({"email": new_email}):
-            st.error("User exists")
+            st.error("User already exists")
         else:
             users_collection.insert_one({"email": new_email, "password": new_pwd})
+            st.success("Account created! Please log in.")
             st.session_state.auth_state = "login"
             st.rerun()
     if st.button("Back"):
@@ -99,6 +104,10 @@ elif st.session_state.auth_state == "signup":
 # --- 4. THE MAIN PROJECT (AUTHENTICATED) ---
 elif st.session_state.auth_state == "authenticated":
     
+    # Ensure session_id exists if page is refreshed
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
+
     # SIDEBAR
     with st.sidebar:
         st.title("📂 History")
@@ -140,7 +149,7 @@ elif st.session_state.auth_state == "authenticated":
             st.session_state.qa_chain = ConversationalRetrievalChain.from_llm(llm=llm, retriever=vectorstore.as_retriever())
             st.success("Ready!")
 
-    # Chat Messages
+    # Chat Messages Display
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
@@ -153,15 +162,30 @@ elif st.session_state.auth_state == "authenticated":
 
         if st.session_state.qa_chain:
             with st.chat_message("assistant"):
-                result = st.session_state.qa_chain.invoke({"question": prompt, "chat_history": st.session_state.chat_history})
+                result = st.session_state.qa_chain.invoke({
+                    "question": prompt, 
+                    "chat_history": st.session_state.chat_history
+                })
                 response = result["answer"]
                 st.markdown(response)
             
-            # SAVE TO MONGO
+            # SAVE TO MONGODB
             ts = datetime.datetime.utcnow()
             history_collection.insert_many([
-                {"user_id": st.session_state.user_id, "session_id": st.session_state.session_id, "role": "user", "content": prompt, "timestamp": ts},
-                {"user_id": st.session_state.user_id, "session_id": st.session_state.session_id, "role": "assistant", "content": response, "timestamp": ts + datetime.timedelta(seconds=1)}
+                {
+                    "user_id": st.session_state.user_id, 
+                    "session_id": st.session_state.session_id, 
+                    "role": "user", 
+                    "content": prompt, 
+                    "timestamp": ts
+                },
+                {
+                    "user_id": st.session_state.user_id, 
+                    "session_id": st.session_state.session_id, 
+                    "role": "assistant", 
+                    "content": response, 
+                    "timestamp": ts + datetime.timedelta(seconds=1)
+                }
             ])
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.session_state.chat_history.append((prompt, response))

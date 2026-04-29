@@ -44,7 +44,7 @@ if uploaded_file:
         # 4. Free LLM (Groq - Llama 3)
         llm = ChatGroq(
             groq_api_key=groq_key,
-            model_name="llama3-8b-8192"
+            model_name="llama-3.1-8b-instant"  # This is the updated 2026 stable version
         )
         
         # 5. Build Chain
